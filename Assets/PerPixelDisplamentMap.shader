@@ -49,7 +49,7 @@
 				v.normal = float3(0,0,0);
 				o.normal = v.normal;
 				o.viewOrigin = v.pos;
-				o.viewVec = normalize( mul( _World2Object,_WorldSpaceCameraPos) - v.pos);
+				o.viewVec = normalize( mul( _World2Object,float4(_WorldSpaceCameraPos,1)) - v.pos);
 				
 				o.pos = mul(UNITY_MATRIX_MVP, v.pos);
 				o.tex_coords =  TRANSFORM_TEX(v.tex_coords, _MainTex);
@@ -61,33 +61,44 @@
 				return tex2D(_MainTex,uv).x ;
 			}
 
-			
-			float linear_search( float3 start, float3 dir,float len )
-			{
-				int linear_search_steps = 1000;
-				float depth_per_step=len/linear_search_steps;
-				float depth = 0;
-				float pre_height = 1;
-				float dis = depth_per_step;
-				float hscale = _HScale;
-				float collied = 0;
-				_dbg_start = start;
-				_dbg_dir = dir;
-				for( int i=0; i < linear_search_steps; i++ )
-				{
-					depth = (start + dis*dir).z;
-					float2 tex_coords = (start + dis*dir).xy;
-					float height = getHeight(tex_coords)*hscale;// + (1-hscale)/2 - 0.5;
-					if (  depth < height && !collied )
-					{
-						collied = 1;
-						pre_height = depth;
-						
-					}
-					dis+=depth_per_step;
 
+			float search( float3 start, float3 dir,float len )
+			{
+				int linearSteps = 10;
+				int bisectionSteps = 8;
+				float step = len/linearSteps;
+				float dis = step;
+				float preDis = 0;
+				float3 testingPoint;
+				//linear search
+				for( int i=0; i < linearSteps; i++ )  
+				{
+					testingPoint = (start + dis*dir);
+					if (  testingPoint.z > getHeight(testingPoint.xy) )
+					{
+						preDis = dis;
+						dis+=step;						
+					}
 				}
-				return pre_height * collied;
+				
+				//bisection search
+				dis = 0;
+				for ( i = 0; i < bisectionSteps; i++ )
+				{
+					float biDis = preDis + dis;
+					float3 testingPoint = (start + biDis*dir);
+					step *= 0.5;
+					if (  testingPoint.z >  getHeight(testingPoint.xy) )
+					{
+						dis += step;
+					}				
+					else
+					{
+						dis -= step;
+					}	
+				}
+
+				return getHeight((start + (preDis + dis)*dir).xy);
 			}
 
 			float3 getRayStart(v2f i)
@@ -113,13 +124,13 @@
 			{
 				// sample the texture
 				float3 s = getRayStart(i);
-				float h = linear_search(s, -i.viewVec, length(s-i.viewOrigin) );
+				float h = search(s, -i.viewVec, length(s-i.viewOrigin) );
 				float4 col = float4(0,1,0,0);
-				if ( h <= 0.000001)
-					discard;
-				else
-					col = float4(h,h,h,0);
-				return col;
+				//if ( h <= 0.000001)
+//					discard;
+				//else
+//					col = float4(h,h,h,0);
+				return float4(s,0);
 			}
 			ENDCG
 		}
