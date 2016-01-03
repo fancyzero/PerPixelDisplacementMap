@@ -17,25 +17,28 @@ def walkthrough( node, intent ):
     for i in range(0, cnt):
         walkthrough(node.GetChild(i), intent)
 
-def pixel_query( mesh, start, dir ):
-    verts = mesh.GetControlPoints()
-
-    polygoncount = mesh.GetPolygonCount()
+def pixel_query( mesh, start, dir , triangle_groups, group_width, group_height):
     results = []
-    for i in range(polygoncount):
-        p1 = mesh.GetPolygonVertex(i,0)
-        p2 = mesh.GetPolygonVertex(i,1)
-        p3 = mesh.GetPolygonVertex(i,2)
+    verts = mesh.GetControlPoints()
+    x = int(start[1]/group_width)
+    y = int(start[2]/group_height)
+    triangles = triangle_groups[x][y]
+    if len( triangles ) == 0 :
+        return results
+    polygoncount = mesh.GetPolygonCount()
+    for i in (triangles):
         triangleVerts=[None,None,None]
-
-        triangleVerts[0] = verts[p1]
-        triangleVerts[1] = verts[p2]
-        triangleVerts[2] = verts[p3]
+        triangleVerts[0] = verts[i[0]]
+        triangleVerts[1] = verts[i[1]]
+        triangleVerts[2] = verts[i[2]]
         r = ray_query(triangleVerts,start, dir)
         if r >=0:
             pos = bisect.bisect_left(results,r)
             results.insert( pos, r)
     if len(results) == 0:
+        return results
+
+    if len(results) == 0 and start[1] > 0.5 and start[2] > 0.5:
         return results
     #remove results that too close
     i = 0
@@ -73,7 +76,7 @@ def ray_query( verts, start, dir ):
     t = FbxVector4.DotProduct(e2, s2) * invDivisor
     return t
 
-def get_AABB(verts):
+def get_AABB(verts,extent=0):
     AABBMax = [0,0,0]
     AABBMin = [0,0,0]
 
@@ -93,59 +96,66 @@ def get_AABB(verts):
             AABBMin[1] = v[1]
         if v[2] < AABBMin[2]:
             AABBMin[2] = v[2]
+    AABBMin = map(lambda x:x-extent,AABBMin)
+    AABBMax = map(lambda x:x+extent,AABBMax)
     return AABBMin, AABBMax
+
 #put triangles into groups by its aabb to speed up ray casting
-def group_triangles(mesh, width, height, wstep, hstep):
-    triangle_groups = [[ [] for i in range(width)] for j in range(height)]
+def group_triangles(mesh, group_row, group_col, group_width, group_height, max_point ):
+    triangle_groups = [[ [] for i in range(group_col)] for j in range(group_row)]
 
+    print "group size = ", group_width,group_height
     verts = mesh.GetControlPoints()
-
     polygoncount = mesh.GetPolygonCount()
 
     for i in range(polygoncount):
         p1 = mesh.GetPolygonVertex(i,0)
         p2 = mesh.GetPolygonVertex(i,1)
         p3 = mesh.GetPolygonVertex(i,2)
-        tverts=[[p1,p2,p3]]
+        tverts=[verts[p1],verts[p2],verts[p3]]
 
-    AABBMin,AABBMax = get_AABB(tverts)
-    #project triangle into y,z plane
-    startx = int(AABBMin[1] / wstep)
-    starty = int(AABBMin[2] / hstep)
-    lengthx = int((AABBMax[1] - AABBMin[1]) / wstep)
-    lengthy = int((AABBMax[2] - AABBMin[2]) / hstep)
-    for x in range(startx,startx+lengthx):
-        for y in range(starty,starty+lengthy):
-            triangle_groups[x][y].append((p1,p2,p3))
+        TriangleMinPoint, TriangleMaxPoint = get_AABB(tverts)
+        #project triangle into y,z plane
+        startx = int(TriangleMinPoint[1] / group_width)
+        starty = int(TriangleMinPoint[2] / group_height)
+        endx = int(TriangleMaxPoint[1] / group_width)
+        endy = int(TriangleMaxPoint[2] / group_height)
+        for x in range(startx,endx+1):
+            for y in range(starty,endy+1):
+                triangle_groups[x][y].append((p1,p2,p3))
 
-
-
-
+    return triangle_groups
 
 def generate_map( mesh_node ):
     width = 256
     height = 256
 
+
     mesh = mesh_node.GetMesh()
+    #transform all vertices , so they are all larger then 0,0,0
     verts = mesh.GetControlPoints()
+    AABBMin, AABBMax = get_AABB(verts,0.01)
+    for i in range(len(verts)):
+        newv = FbxVector4(verts[i][0]-AABBMin[0], verts[i][1]-AABBMin[1], verts[i][2]-AABBMin[2],0)
+        mesh.SetControlPointAt(newv,i)
+    verts = mesh.GetControlPoints()
+    #update bounding box as well
+    MaxPoint = map( lambda x,y: x-y, AABBMax, AABBMin)
 
-    AABBMin, AABBMax = get_AABB(verts)
+    wstep = (MaxPoint[1])/width
+    hstep = (MaxPoint[2])/height
+    hscale = 1/(MaxPoint[0])
 
-    wstep = (AABBMax[1]-AABBMin[1])/width
-    hstep = (AABBMax[2]-AABBMin[2])/height
-    hscale = 1/(AABBMax[0]-AABBMin[0])
-
-    print group_triangles(mesh, width, height, wstep, hstep)
-
+    triangle_groups = group_triangles(mesh, width, height, wstep, hstep, MaxPoint )
 
     img = Image.new("RGBA",(width,height),(255,255,255,255))
     pixels = img.load()
     report = 0
     for y in range(height):
         for x in range(width):
-            start = FbxVector4( AABBMin[0], AABBMin[1] + x*wstep, AABBMin[2] + y*hstep,0 )
+            start = FbxVector4( 0, x*wstep, y*hstep,0 )
             dir = FbxVector4(1,0,0,0)
-            r = pixel_query(mesh, start, dir)
+            r = pixel_query(mesh, start, dir,triangle_groups,  wstep, hstep )
             color=[255,255,255,255]
 
             for c in range(len(r)):
@@ -155,7 +165,7 @@ def generate_map( mesh_node ):
                 color[c] = int(r[c]*hscale*255)
             pixels[x,y]=(color[0],color[1],color[2],color[3])
             if ( x + y * width) / float(width*height) > report:
-                print report
+                print "{0:.0f}%".format(report* 100)
                 report = report + 0.01
 
     fp = open("img.bmp","wb")
@@ -167,7 +177,7 @@ def generate_map( mesh_node ):
 
 sdk_manager, scene = FbxCommon.InitializeSdkObjects()
 converter = FbxCommon.FbxGeometryConverter(sdk_manager)
-FbxCommon.LoadScene(sdk_manager, scene, "/Users/FancyZero/PerPixelDisplacementMapGenerator/Monkey.fbx" )
+FbxCommon.LoadScene(sdk_manager, scene, "./spaceship.fbx" )
 converter.Triangulate(scene,False)
 root = scene.GetRootNode()
 mesh = root.GetChild(0)
