@@ -142,14 +142,14 @@ def group_triangles(mesh, group_row, group_col, group_width, group_height, max_p
 
 
 def generate_map(mesh_node, save_path):
-    width = 32
-    height = 32
+    width = 256
+    height = 256
 
     mesh = mesh_node.GetMesh()
     # transform all vertices , so they are all larger then 0,0,0
     verts = mesh.GetControlPoints()
     AABBMin, AABBMax = get_AABB(verts,
-                                0.1)  # get an AABB that slightly bigger than the actual one, to avoid some conner case
+                                0.05)  # get an AABB that slightly bigger than the actual one, to avoid some conner case
     for i in range(len(verts)):
         newv = FbxVector4(verts[i][0] - AABBMin[0], verts[i][1] - AABBMin[1], verts[i][2] - AABBMin[2], 0)
         mesh.SetControlPointAt(newv, i)
@@ -190,7 +190,7 @@ def generate_map(mesh_node, save_path):
 
 
 file_path = sys.argv[1]
-save_path = os.path.splitext(os.path.abspath(file_path))[0] + ".tga"
+save_path = os.path.splitext(os.path.abspath(file_path))[0] + ".bmp"
 
 sdk_manager, scene = FbxCommon.InitializeSdkObjects()
 converter = FbxCommon.FbxGeometryConverter(sdk_manager)
