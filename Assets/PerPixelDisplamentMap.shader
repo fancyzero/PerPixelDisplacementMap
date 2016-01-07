@@ -3,8 +3,8 @@
 	Properties
 	{
 		_MainTex ("HeightMap", 2D) = "white" {}
-		_DiffuseTex ("Diffuse", 2D) = "white" {}
-		_NormalTex ("Normal", 2D) = "white" {}
+		_TangentTex ("Tangent", 2D) = "white" {}
+		_BinormalTex ("Binormal", 2D) = "white" {}
 	}
 	SubShader
 	{
@@ -35,7 +35,8 @@
 
 
 			sampler2D _MainTex;
-			sampler2D _DiffuseTex;
+			sampler2D _TangentTex;
+			sampler2D _BinormalTex;
 			v2f vert (appdata v)
 			{
 				v2f o;
@@ -57,7 +58,7 @@
 
 			float3 search( const float3 start, float3 dir,float len )
 			{
-				int linearSteps = 2000;
+				int linearSteps = 20;
 				float distPerStep = len/linearSteps;
 				float currentDist = distPerStep;
 				float preDist = 0;
@@ -74,12 +75,12 @@
 					}
 				}
 				#if 1
-				int binarySteps = 30;
+				int binarySteps = 10;
 				for( step = 1; step < binarySteps; step++ )
 				{
 					distPerStep *=0.5;
 					float3 v = start + dir * currentDist;
-					float depthFromMap = tex2D(_MainTex, v.xy);
+					float4 depthFromMap = tex2D(_MainTex, v.xy);
 					float4 diff = v.z - depthFromMap;
 					if ( diff.x * diff.y * diff.z * diff.w > 0 )
 					{
@@ -124,7 +125,12 @@
 				col = float4(h,0);
 				if ( h.x > 0.8)
 					discard;
-				return tex2D(_DiffuseTex, float2(h.yz));
+				float3 L=normalize(float3(0,1,0));
+				float3 T = tex2D(_TangentTex,float2(h.yz)).xyz*2-1;
+				float3 B = tex2D(_BinormalTex,float2(h.yz)).xyz*2-1;
+				float3 N = normalize(cross(T,B));
+				float b = dot(N,L);
+				return float4(b,b,b,0);
 				
 				
 			}
