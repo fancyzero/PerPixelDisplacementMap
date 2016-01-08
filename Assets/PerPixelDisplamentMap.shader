@@ -50,22 +50,22 @@
 				return o;
 			}
 			
-			float getHeight(float3 uvw)  
+			float4 getHeight(float3 uvw)  
 			{
-				return tex2D(_MainTex,uvw.xy).x *0.99;
+				return float4(uvw.x,1,1,1);
 			}
 
 
-			float3 search( const float3 start, float3 dir,float len )
+			float4 search( const float3 start, float3 dir,float len )
 			{
-				int linearSteps = 20;
+				int linearSteps = 5;
 				float distPerStep = len/linearSteps;
 				float currentDist = distPerStep;
 				float preDist = 0;
 				for ( int step = 1; step < linearSteps; step++ )
 				{
 					float3 v = start + dir * currentDist;
-					float4 depthFromMap = tex2D(_MainTex, v.xy);
+					float4 depthFromMap = getHeight(v);
 					float4 diff = v.z - depthFromMap;
 					if ( diff.x * diff.y * diff.z * diff.w > 0 )
 					{
@@ -74,27 +74,23 @@
 						currentDist += distPerStep;
 					}
 				}
-				#if 1
-				int binarySteps = 10;
-				for( step = 1; step < binarySteps; step++ )
-				{
-					distPerStep *=0.5;
-					float3 v = start + dir * currentDist;
-					float4 depthFromMap = tex2D(_MainTex, v.xy);
-					float4 diff = v.z - depthFromMap;
-					if ( diff.x * diff.y * diff.z * diff.w > 0 )
-					{
-						//out side
-						currentDist += distPerStep;
-					}				
-					else
-					{
-						currentDist -= distPerStep;
-					}
-				}
-				#endif
-				float3 v = start + dir * currentDist;
-				return float3(currentDist/len,v.x,v.y);
+								
+				float3 v1 = start + dir * preDist;
+				float3 v2 = start + dir * currentDist;
+				float vos = v1.z;
+				float voe = v2.z;
+				float vps = getHeight(v1).x;
+				float vpe = getHeight(v2).x;
+				float l = length(v1.xy - v2.xy);
+				float ok = (voe-vos)/l;
+				float pk = (vpe-vps)/l;
+				float o = vos;
+				float p = vps;
+
+				float intersect = (p-o)/ok-pk;
+
+
+				return float4(float3(intersect,intersect,intersect),currentDist/len);
 			}
 
 			float3 getRayStart(v2f i)
@@ -113,24 +109,22 @@
 
 				float T = min(min(Tx,Ty),Tz);
 
-				return (i.viewOrigin + T*i.viewVec + 1)/2;
+				return (i.viewOrigin + T*i.viewVec );
 			}
 
-			fixed4 frag (v2f i) : SV_Target
+			float4 frag (v2f i) : SV_Target
 			{
 				float3 s = getRayStart(i);
-				float3 h = search(s, -normalize(i.viewVec), length(s-i.viewOrigin) );
-				float4 col = float4(0,0,0,0);
+				float4 h = search(s, -normalize(i.viewVec), length(s-i.viewOrigin) );
 
-				col = float4(h,0);
-				if ( h.x > 0.8)
+ 				float3 T = normalize(ddx(h.xyz));
+				float3 B = normalize(ddy(h.xyz));
+
+				if ( h.w > 0.999999)
 					discard;
-				float3 L=normalize(float3(0,1,0));
-				float3 T = tex2D(_TangentTex,float2(h.yz)).xyz*2-1;
-				float3 B = tex2D(_BinormalTex,float2(h.yz)).xyz*2-1;
-				float3 N = normalize(cross(T,B));
-				float b = dot(N,L);
-				return float4(b,b,b,0);
+				float3 N = normalize(cross(B,T));
+				//return float4(N,0);
+				return float4(h);
 				
 				
 			}

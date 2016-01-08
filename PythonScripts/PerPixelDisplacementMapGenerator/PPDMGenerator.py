@@ -1,5 +1,3 @@
-__author__ = 'ZhouLin'
-
 import sys
 from fbx import *
 import FbxCommon
@@ -7,7 +5,7 @@ from PIL import Image
 import bisect
 import os
 
-dir(FbxCommon)
+__author__ = 'ZhouLin'
 
 
 def walk_through(node, intent="  "):
@@ -20,48 +18,47 @@ def walk_through(node, intent="  "):
     print intent + node.GetName() + "'" + node.GetTypeName() + "'"
     cnt = node.GetChildCount()
 
-    intent = intent + "  "
+    intent += "  "
     for i in range(0, cnt):
         walk_through(node.GetChild(i), intent)
 
-class queryResult:
+
+class QueryResult:
     def __init__(self):
-        self.t = 0 # intersect point
-        self.triangle=(0,0,0) #vertex index of the triangle that interseted
-        self.uv = (0,0)
+        self.t = 0  # intersect point
+        self.triangle = (0, 0, 0)  # vertex index of the triangle that interseted
+        self.uv = (0, 0)
 
 
-
-def pixel_query(mesh, start, dir, triangle_groups, group_width, group_height):
+def pixel_query(in_mesh, ray_start, ray_dir, triangle_groups, group_width, group_height):
     """
     cast a ray to the mesh and query all intersections
 
-    :param mesh: the triangle mesh
-    :param start: ray origin
-    :param dir: ray direction
+    :param in_mesh: the triangle mesh
+    :param ray_start: ray origin
+    :param ray_dir: ray direction
     :param triangle_groups: triangle groups for speed up the process
     :param group_width:
     :param group_height:
     :return: list of intersection points along the ray
     """
     results = []
-    verts = mesh.GetControlPoints()
-    x = int(start[1] / group_width)
-    y = int(start[2] / group_height)
+    mesh_control_points = in_mesh.GetControlPoints()
+    x = int(ray_start[1] / group_width)
+    y = int(ray_start[2] / group_height)
     triangles = triangle_groups[x][y]
     if len(triangles) == 0:
         return results
-    polygoncount = mesh.GetPolygonCount()
-    for i in (triangles):
-        triangleVerts = [None, None, None]
+    for i in triangles:
+        triangle_vertices = [None, None, None]
 
-        triangleVerts[0] = verts[mesh.GetPolygonVertex(i,0)]
-        triangleVerts[1] = verts[mesh.GetPolygonVertex(i,1)]
-        triangleVerts[2] = verts[mesh.GetPolygonVertex(i,2)]
+        triangle_vertices[0] = mesh_control_points[in_mesh.GetPolygonVertex(i, 0)]
+        triangle_vertices[1] = mesh_control_points[in_mesh.GetPolygonVertex(i, 1)]
+        triangle_vertices[2] = mesh_control_points[in_mesh.GetPolygonVertex(i, 2)]
 
-        t ,uv = ray_query(triangleVerts, start, dir)
+        t, uv = ray_query(triangle_vertices, ray_start, ray_dir)
         if t >= 0:
-            qr = queryResult()
+            qr = QueryResult()
             qr.t = t
             qr.uv = uv
             qr.triangleIndex = i
@@ -70,59 +67,63 @@ def pixel_query(mesh, start, dir, triangle_groups, group_width, group_height):
     if len(results) == 0:
         return results
 
-    if len(results) == 0 and start[1] > 0.5 and start[2] > 0.5:
+    if len(results) == 0 and ray_start[1] > 0.5 and ray_start[2] > 0.5:
         return results
     # remove results that too close
-    results.sort(key=lambda x:x.t)
+    results.sort(key=lambda item: item.t)
     i = 0
     while i < len(results) - 1:
         if abs(results[i].t - results[i + 1].t) < 0.001:
             del results[i + 1]
         else:
-            i = i + 1
+            i += 1
     return results
 
-def ray_query(verts, start, dir):
+
+def ray_query(vertices, ray_start, ray_dir):
     """
     ray vs triangle intersection
-    :param verts: 3 vertices that makes a triangle
-    :param start: ray origin
-    :param dir: ray dir
+    :param vertices: 3 vertices that makes a triangle
+    :param ray_start: ray origin
+    :param ray_dir: ray dir
     :return: intersection point along the ray, uv
     """
-    p1 = verts[0]
-    p2 = verts[1]
-    p3 = verts[2]
+    p1 = vertices[0]
+    p2 = vertices[1]
+    p3 = vertices[2]
 
     e1 = p2 - p1
     e2 = p3 - p1
 
-    pvec = s1 = FbxVector4.CrossProduct(dir, e2)
+    s1 = FbxVector4.CrossProduct(ray_dir, e2)
     divisor = FbxVector4.DotProduct(s1, e1)
     if divisor == 0.0:
-        return -1,(0,0)
-    invDivisor = 1.0 / divisor
+        return -1, (0, 0)
+    inv_divisor = 1.0 / divisor
 
-    tvec = d = start - p1
-    u = FbxVector4.DotProduct(tvec, pvec) * invDivisor
+    d = ray_start - p1
+    u = FbxVector4.DotProduct(d, s1) * inv_divisor
     if u < 0 or u > 1:
         return -1, (0, 0)
     s2 = FbxVector4.CrossProduct(d, e1)
-    v = FbxVector4.DotProduct(dir, s2) * invDivisor
+    v = FbxVector4.DotProduct(ray_dir, s2) * inv_divisor
     if v < 0. or u + v > 1.:
         return -1, (0, 0)
-    t = FbxVector4.DotProduct(e2, s2) * invDivisor
+    t = FbxVector4.DotProduct(e2, s2) * inv_divisor
 
     return t, (u, v)
 
 
-def get_AABB(verts, extent=0):
+def get_aabb(vertices, extent=0):
     """
+    :param vertices:
+    :param extent:
+    :return:
     :rtype: tuple
     """
-    x = [v[0] for v in verts]
-    y = [v[1] for v in verts]
-    z = [v[2] for v in verts]
+    x = [v[0] for v in vertices]
+    y = [v[1] for v in vertices]
+    z = [v[2] for v in vertices]
     max_point = [max(x), max(y), max(z)]
     min_point = [min(x), min(y), min(z)]
     min_point = map(lambda x: x - extent, min_point)
@@ -131,20 +132,20 @@ def get_AABB(verts, extent=0):
 
 
 # put triangles into groups by its aabb to speed up ray casting
-def group_triangles(mesh, group_row, group_col, group_width, group_height, max_point):
+def group_triangles(in_mesh, group_row, group_col, group_width, group_height, max_point):
     triangle_groups = [[[] for i in range(group_col)] for j in range(group_row)]
 
     print "group size = ", group_width, group_height
-    verts = mesh.GetControlPoints()
-    polygoncount = mesh.GetPolygonCount()
+    verts = in_mesh.GetControlPoints()
+    polygoncount = in_mesh.GetPolygonCount()
 
     for i in range(polygoncount):
-        p1 = mesh.GetPolygonVertex(i, 0)
-        p2 = mesh.GetPolygonVertex(i, 1)
-        p3 = mesh.GetPolygonVertex(i, 2)
+        p1 = in_mesh.GetPolygonVertex(i, 0)
+        p2 = in_mesh.GetPolygonVertex(i, 1)
+        p3 = in_mesh.GetPolygonVertex(i, 2)
         tverts = [verts[p1], verts[p2], verts[p3]]
 
-        p_min, p_max = get_AABB(tverts)
+        p_min, p_max = get_aabb(tverts)
         # project triangle into y,z plane
         startx = int(p_min[1] / group_width)
         starty = int(p_min[2] / group_height)
@@ -167,10 +168,9 @@ def generate_map(mesh_node, save_path):
     TTT = layer.GetTangents().GetDirectArray()
     BBB = layer.GetBinormals().GetDirectArray()
 
-
     # transform all vertices , so they are all larger then 0,0,0
 
-    AABBMin, AABBMax = get_AABB(verts,
+    AABBMin, AABBMax = get_aabb(verts,
                                 0.05)  # get an AABB that slightly bigger than the actual one, to avoid some conner case
     for i in range(len(verts)):
         newv = FbxVector4(verts[i][0] - AABBMin[0], verts[i][1] - AABBMin[1], verts[i][2] - AABBMin[2], 0)
@@ -207,47 +207,48 @@ def generate_map(mesh_node, save_path):
             if len(r) > 0:
                 u = r[0].uv[0]
                 v = r[0].uv[1]
-                w = 1-(u+v)
+                w = 1 - (u + v)
                 uv1 = FbxVector2()
                 uv2 = FbxVector2()
                 uv3 = FbxVector2()
-                mesh.GetPolygonVertexUV(r[0].triangleIndex,0,"UVMap",uv1)
-                mesh.GetPolygonVertexUV(r[0].triangleIndex,1,"UVMap",uv2)
-                mesh.GetPolygonVertexUV(r[0].triangleIndex,2,"UVMap",uv3)
-                U =  (w*uv1[0]+u*uv2[0] + v*uv3[0])
-                V =  (w*uv1[1]+u*uv2[1] + v*uv3[1])
+                mesh.GetPolygonVertexUV(r[0].triangleIndex, 0, "UVMap", uv1)
+                mesh.GetPolygonVertexUV(r[0].triangleIndex, 1, "UVMap", uv2)
+                mesh.GetPolygonVertexUV(r[0].triangleIndex, 2, "UVMap", uv3)
+                U = (w * uv1[0] + u * uv2[0] + v * uv3[0])
+                V = (w * uv1[1] + u * uv2[1] + v * uv3[1])
                 '''Tangents'''
-                t1 = TTT[r[0].triangleIndex*3]
-                t2 = TTT[r[0].triangleIndex*3+1]
-                t3 = TTT[r[0].triangleIndex*3+2]
-                b1 = BBB[r[0].triangleIndex*3]
-                b2 = BBB[r[0].triangleIndex*3+1]
-                b3 = BBB[r[0].triangleIndex*3+2]
+                t1 = TTT[r[0].triangleIndex * 3]
+                t2 = TTT[r[0].triangleIndex * 3 + 1]
+                t3 = TTT[r[0].triangleIndex * 3 + 2]
+                b1 = BBB[r[0].triangleIndex * 3]
+                b2 = BBB[r[0].triangleIndex * 3 + 1]
+                b3 = BBB[r[0].triangleIndex * 3 + 2]
 
-                Tx= (w*t1[0] + u*t2[0] + v*t3[0])
-                Ty= (w*t1[1] + u*t2[1] + v*t3[1])
-                Tz= (w*t1[2] + u*t2[2] + v*t3[2])
+                Tx = (w * t1[0] + u * t2[0] + v * t3[0])
+                Ty = (w * t1[1] + u * t2[1] + v * t3[1])
+                Tz = (w * t1[2] + u * t2[2] + v * t3[2])
 
-                Bx= (w*b1[0] + u*b2[0] + v*b3[0])
-                By= (w*b1[1] + u*b2[1] + v*b3[1])
-                Bz= (w*b1[2] + u*b2[2] + v*b3[2])
+                Bx = (w * b1[0] + u * b2[0] + v * b3[0])
+                By = (w * b1[1] + u * b2[1] + v * b3[1])
+                Bz = (w * b1[2] + u * b2[2] + v * b3[2])
 
-                tangentPixels[x,y] = (int(((Tx+1)/2)*255),int(((Ty+1)/2)*255),int(((Tz+1)/2)*255))
-                binormalPixels[x,y] = (int(((Bx+1)/2)*255),int(((By+1)/2)*255),int(((Bz+1)/2)*255))
+                tangentPixels[x, y] = (int(((Tx + 1) / 2) * 255), int(((Ty + 1) / 2) * 255), int(((Tz + 1) / 2) * 255))
+                binormalPixels[x, y] = (int(((Bx + 1) / 2) * 255), int(((By + 1) / 2) * 255), int(((Bz + 1) / 2) * 255))
             if (x + y * width) / float(width * height) > progress_report:
                 print "\r{0:.0f}%".format(progress_report * 100)
-                progress_report = progress_report + 0.01
+                progress_report += 0.01
 
-    fp = open(save_path+"_Displace.bmp", "wb")
+    fp = open(save_path + "_Displace.bmp", "wb")
     img.save(fp)
     fp.close()
-    fp = open(save_path+"_Tangent.bmp", "wb")
+    fp = open(save_path + "_Tangent.bmp", "wb")
     tangentMap.save(fp)
     fp.close()
-    fp = open(save_path+"_Binormal.bmp", "wb")
+    fp = open(save_path + "_Binormal.bmp", "wb")
     binormalMap.save(fp)
     fp.close()
-    print "image saved to " + save_path
+
+    print "images saved to " + os.path.split(save_path)[0]
     img.show()
 
 
@@ -258,8 +259,9 @@ save_path = os.path.splitext(os.path.abspath(file_path))[0]
 sdk_manager, scene = FbxCommon.InitializeSdkObjects()
 converter = FbxCommon.FbxGeometryConverter(sdk_manager)
 FbxCommon.LoadScene(sdk_manager, scene, file_path)
+print "Triangulating..."
 converter.Triangulate(scene, False)
-
+print "Triangulated"
 
 print "=== scene graph start ========"
 root = scene.GetRootNode()
@@ -267,6 +269,5 @@ walk_through(root, "  ")
 print "=== scene graph end   ========"
 mesh = root.GetChild(0)
 attr_type = mesh.GetNodeAttribute().GetAttributeType()
-
 if attr_type == FbxCommon.FbxNodeAttribute.eMesh:
     generate_map(mesh, save_path)
