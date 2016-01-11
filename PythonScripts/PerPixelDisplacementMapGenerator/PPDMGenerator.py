@@ -26,11 +26,11 @@ def walk_through(node, intent="  "):
 class QueryResult:
     def __init__(self):
         self.t = 0  # intersect point
-        self.triangle = (0, 0, 0)  # vertex index of the triangle that interseted
         self.uv = (0, 0)
+        self.triangleIndex = -1
 
 
-def pixel_query(in_mesh, ray_start, ray_dir, triangle_groups, group_width, group_height):
+def pixel_query(in_mesh, ray_start, ray_dir, triangle_groups, group_width, group_height, hscale):
     """
     cast a ray to the mesh and query all intersections
 
@@ -72,11 +72,13 @@ def pixel_query(in_mesh, ray_start, ray_dir, triangle_groups, group_width, group
     # remove results that too close
     results.sort(key=lambda item: item.t)
     i = 0
-    while i < len(results) - 1:
-        if abs(results[i].t - results[i + 1].t) < 0.001:
-            del results[i + 1]
-        else:
-            i += 1
+    if len(results) % 2 == 1:
+        print "bad query"
+
+
+    if len(results) % 2 == 1:
+        results.append(results[-1])
+        results[-1].t+=0.02
     return results
 
 
@@ -165,8 +167,7 @@ def generate_map(mesh_node, save_path):
     mesh = mesh_node.GetMesh()
     verts = mesh.GetControlPoints()
     layer = mesh.GetLayer(0)
-    TTT = layer.GetTangents().GetDirectArray()
-    BBB = layer.GetBinormals().GetDirectArray()
+    normals = layer.GetNormals().GetDirectArray()
 
     # transform all vertices , so they are all larger then 0,0,0
 
@@ -182,58 +183,55 @@ def generate_map(mesh_node, save_path):
     wstep = (MaxPoint[1]) / width
     hstep = (MaxPoint[2]) / height
     hscale = 1 / (MaxPoint[0])
-
+    print hscale,MaxPoint
     triangle_groups = group_triangles(mesh, width, height, wstep, hstep, MaxPoint)
 
     img = Image.new("RGBA", (width, height), (255, 255, 255, 255))
-    tangentMap = Image.new("RGBA", (width, height), (255, 255, 255, 255))
-    binormalMap = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+    normal_x_map = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+    normal_y_map = Image.new("RGBA", (width, height), (255, 255, 255, 255))
     pixels = img.load()
-    tangentPixels = tangentMap.load()
-    binormalPixels = binormalMap.load()
+    normal_x_pixels = normal_x_map.load()
+    normal_y_pixels = normal_y_map.load()
     progress_report = 0
     for y in range(height):
         for x in range(width):
             start = FbxVector4(0, x * wstep, y * hstep, 0)
             dir = FbxVector4(1, 0, 0, 0)
-            r = pixel_query(mesh, start, dir, triangle_groups, wstep, hstep)
+            query_results = pixel_query(mesh, start, dir, triangle_groups, wstep, hstep, hscale)
             color = [255, 255, 255, 255]
-            for c in range(len(r)):
+            normal_x = [0,0,0,0]
+            normal_y = [0,0,0,0]
+
+            for c in range(len(query_results)):
                 if c >= 4:
-                    print "too many intersections for ray: ", start[0], start[1], start[2]
+                    print "too many (", c , ") intersections for ray: ", start[0], start[1], start[2]
                     break
-                color[c] = int(r[c].t * hscale * 255)
-            pixels[x, y] = (color[0], color[1], color[2], color[3])
-            if len(r) > 0:
-                u = r[0].uv[0]
-                v = r[0].uv[1]
+                r = query_results[c]
+                u = r.uv[0]
+                v = r.uv[1]
                 w = 1 - (u + v)
                 uv1 = FbxVector2()
                 uv2 = FbxVector2()
                 uv3 = FbxVector2()
-                mesh.GetPolygonVertexUV(r[0].triangleIndex, 0, "UVMap", uv1)
-                mesh.GetPolygonVertexUV(r[0].triangleIndex, 1, "UVMap", uv2)
-                mesh.GetPolygonVertexUV(r[0].triangleIndex, 2, "UVMap", uv3)
-                U = (w * uv1[0] + u * uv2[0] + v * uv3[0])
-                V = (w * uv1[1] + u * uv2[1] + v * uv3[1])
-                '''Tangents'''
-                t1 = TTT[r[0].triangleIndex * 3]
-                t2 = TTT[r[0].triangleIndex * 3 + 1]
-                t3 = TTT[r[0].triangleIndex * 3 + 2]
-                b1 = BBB[r[0].triangleIndex * 3]
-                b2 = BBB[r[0].triangleIndex * 3 + 1]
-                b3 = BBB[r[0].triangleIndex * 3 + 2]
+                mesh.GetPolygonVertexUV(r.triangleIndex, 0, "UVMap", uv1)
+                mesh.GetPolygonVertexUV(r.triangleIndex, 1, "UVMap", uv2)
+                mesh.GetPolygonVertexUV(r.triangleIndex, 2, "UVMap", uv3)
 
-                Tx = (w * t1[0] + u * t2[0] + v * t3[0])
-                Ty = (w * t1[1] + u * t2[1] + v * t3[1])
-                Tz = (w * t1[2] + u * t2[2] + v * t3[2])
+                '''Normals'''
+                n1 = normals[r.triangleIndex * 3]
+                n2 = normals[r.triangleIndex * 3 + 1]
+                n3 = normals[r.triangleIndex * 3 + 2]
 
-                Bx = (w * b1[0] + u * b2[0] + v * b3[0])
-                By = (w * b1[1] + u * b2[1] + v * b3[1])
-                Bz = (w * b1[2] + u * b2[2] + v * b3[2])
+                normal_x[c] = int(((w * n1[0] + u * n2[0] + v * n3[0])+1)/2*255)
+                normal_y[c] = int(((w * n1[1] + u * n2[1] + v * n3[1])+1)/2*255)
 
-                tangentPixels[x, y] = (int(((Tx + 1) / 2) * 255), int(((Ty + 1) / 2) * 255), int(((Tz + 1) / 2) * 255))
-                binormalPixels[x, y] = (int(((Bx + 1) / 2) * 255), int(((By + 1) / 2) * 255), int(((Bz + 1) / 2) * 255))
+                color[c] = int(query_results[c].t * hscale * 255)
+
+            pixels[x, y] = (color[0], color[1], color[2], color[3])
+
+            normal_x_pixels[x, y] = (normal_x[0], normal_x[1], normal_x[2], normal_x[3])
+            normal_y_pixels[x, y] = (normal_y[0], normal_y[1], normal_y[2], normal_y[3])
+
             if (x + y * width) / float(width * height) > progress_report:
                 print "\r{0:.0f}%".format(progress_report * 100)
                 progress_report += 0.01
@@ -241,11 +239,11 @@ def generate_map(mesh_node, save_path):
     fp = open(save_path + "_Displace.bmp", "wb")
     img.save(fp)
     fp.close()
-    fp = open(save_path + "_Tangent.bmp", "wb")
-    tangentMap.save(fp)
+    fp = open(save_path + "_NormalX.bmp", "wb")
+    normal_x_map.save(fp)
     fp.close()
-    fp = open(save_path + "_Binormal.bmp", "wb")
-    binormalMap.save(fp)
+    fp = open(save_path + "_NormalY.bmp", "wb")
+    normal_y_map.save(fp)
     fp.close()
 
     print "images saved to " + os.path.split(save_path)[0]
