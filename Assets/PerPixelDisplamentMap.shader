@@ -60,7 +60,7 @@
 			float4 search( const float3 start, float3 dir,float len )
 			{
 				int layer = 4;
-				int linearSteps = 1256;
+				int linearSteps = 256;
 				float distPerStep = len/linearSteps;
 				float currentDist = distPerStep;
 				float preDist = 0;
@@ -76,31 +76,46 @@
 					{
 						//out side
 						preDist = currentDist;
-						preDiff = diff;
+						//preDiff = diff;
 						currentDist += distPerStep;
+					}
+				}
+									
+				if (dir.z >=0)
+				{
+					if ( diff.z >= 0 )
+					{	
+						if (diff.z < -diff.w)
+							layer = 2;
+						else
+							layer = 3;
 					}
 					else
 					{
-						
+						if (diff.x < -diff.y)
+							layer = 0;
+						else
+							layer = 1;
 					}
-				}
-							
-				
-				layer = 4;
-				if (dir.z >=0)	
-				{
-					if ( diff.x <= 0 )
-						layer = 0;
-					else
-						layer = 1;
 				}
 				else
 				{
-					if ( preDiff.w >= 0 )
-						layer = 3;
+					if ( diff.x >= 0 )
+					{
+						if (diff.x < -diff.y)
+							layer = 0;
+						else
+							layer = 1;
+					}
 					else
-						layer = 1;
+					{
+						if (diff.z < -diff.w)
+							layer = 2;
+						else
+							layer = 3;
+					}
 				}
+		
 				float3 v = start + dir * ( currentDist );
 				return float4(v.xy,layer,currentDist/len);
 			}
@@ -154,10 +169,10 @@
 				if ( h.w > 0.9)
 					discard;
 				
-				float3 light = normalize(float3(-1,0,0));
+				float3 light = normalize(float3(1,1,0));
 				float b = dot(N,light);
-				return show_layer(layer);
-				//return float4(N,0);
+				//return show_layer(layer);
+				return float4(b,b,b,0);
 				//return float4(frac(float2(h.x,h.y)),0,0);
 				
 				
