@@ -81,7 +81,7 @@
 
 				int binarySteps = 10;
 				float insideDist = currentDist;
-				for( step = 1; step < binarySteps; step++ )
+				for( int step = 1; step < binarySteps; step++ )
 				{
 					distPerStep *=0.5;
 					float3 v = start + dir * currentDist;
@@ -101,12 +101,15 @@
 				}
 
 				float3 v = start + dir * insideDist;
-				float4 z=abs(v.z-getHeight(v));
+				float4 z = abs(v.z-getHeight(v));
 				//get layer intersected
 				int m=0; 
-				if (z.y<z.x) m=1;
-				if (z.z<z[m]) m=2; 
-				if (z.w< z[m]) m=3;
+				if (z.y<z.x) 
+					m=1;
+				if (z.z<z[m]) 
+					m=2; 
+				if (z.w< z[m]) 
+					m=3;
 		
 				v = start + dir * ( insideDist );
 				return float4(v.xy,m,insideDist/len);
@@ -165,9 +168,7 @@
 					discard;
 				
 				float3 light = normalize(float3(1,0,0));
-				//light = mul(float4(light,1),_World2Object);
-				N = mul(_Object2World,N);
-				//return float4(N,0);
+				N = mul(_Object2World,float4(N,1));
 				float b = dot(N,light);
 				return b* tex2D(_Diffuse, h.xy);
 				return float4(b,b,b,0);
