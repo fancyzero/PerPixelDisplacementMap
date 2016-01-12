@@ -78,7 +78,7 @@ def pixel_query(in_mesh, ray_start, ray_dir, triangle_groups, group_width, group
 
     if len(results) % 2 == 1:
         results.append(results[-1])
-        results[-1].t+=0.02
+        #results[-1].t+=0.02
     return results
 
 
@@ -222,15 +222,15 @@ def generate_map(mesh_node, save_path):
                 n2 = normals[r.triangleIndex * 3 + 1]
                 n3 = normals[r.triangleIndex * 3 + 2]
 
-                normal_x[c] = int(((w * n1[0] + u * n2[0] + v * n3[0])+1)/2*255)
+                normal_x[c] = int(((w * n1[2] + u * n2[2] + v * n3[2])+1)/2*255)
                 normal_y[c] = int(((w * n1[1] + u * n2[1] + v * n3[1])+1)/2*255)
 
                 color[c] = int(query_results[c].t * hscale * 255)
 
             pixels[x, y] = (color[0], color[1], color[2], color[3])
-
             normal_x_pixels[x, y] = (normal_x[0], normal_x[1], normal_x[2], normal_x[3])
             normal_y_pixels[x, y] = (normal_y[0], normal_y[1], normal_y[2], normal_y[3])
+
 
             if (x + y * width) / float(width * height) > progress_report:
                 print "\r{0:.0f}%".format(progress_report * 100)

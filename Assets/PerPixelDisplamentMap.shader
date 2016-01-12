@@ -5,11 +5,11 @@
 		_MainTex ("HeightMap", 2D) = "white" {}
 		_NormalX ("NormalX", 2D) = "white" {}
 		_NormalY ("NormalY", 2D) = "white" {}
+		_Diffuse ("Diffuse", 2D) = "white" {}
 	}
 	SubShader
 	{
 		Tags { "RenderType"="Opaque" }
-		LOD 100
 		Pass
 		{
 			CGPROGRAM
@@ -37,6 +37,7 @@
 			sampler2D _MainTex;
 			sampler2D _NormalX;
 			sampler2D _NormalY;
+			sampler2D _Diffuse;
 			v2f vert (appdata v)
 			{
 				v2f o;
@@ -56,68 +57,59 @@
 				return float4(uvw.x,1,1,1);
 			}
 
-
 			float4 search( const float3 start, float3 dir,float len )
 			{
 				int layer = 4;
-				int linearSteps = 256;
+				int linearSteps = 20;
 				float distPerStep = len/linearSteps;
 				float currentDist = distPerStep;
-				float preDist = 0;
-				float4 diff;
-				float4 preDepthFromMap;
+				float4 preDiff = float4(-1,-1,-1,-1);
+				float4 diff = preDiff;
+				float4 depthFromMap;
+
 
 				for ( int step = 1; step < linearSteps; step++ )
 				{
 					float3 v = start + dir * currentDist;
-					float4 depthFromMap = getHeight(v);
+					depthFromMap = getHeight(v);
+					diff = v.z - depthFromMap;
+					if ( diff.x * diff.y * diff.z * diff.w > 0 )
+					{
+						currentDist += distPerStep;
+					}
+				}
+
+				int binarySteps = 10;
+				float insideDist = currentDist;
+				for( step = 1; step < binarySteps; step++ )
+				{
+					distPerStep *=0.5;
+					float3 v = start + dir * currentDist;
+					depthFromMap = getHeight(v);
 					diff = v.z - depthFromMap;
 					if ( diff.x * diff.y * diff.z * diff.w > 0 )
 					{
 						//out side
-						preDist = currentDist;
-						//preDiff = diff;
 						currentDist += distPerStep;
-					}
-				}
-									
-				if (dir.z >=0)
-				{
-					if ( diff.z >= 0 )
-					{	
-						if (diff.z < -diff.w)
-							layer = 2;
-						else
-							layer = 3;
-					}
+					}				
 					else
 					{
-						if (diff.x < -diff.y)
-							layer = 0;
-						else
-							layer = 1;
+						insideDist = currentDist;
+						currentDist -= distPerStep;
 					}
+
 				}
-				else
-				{
-					if ( diff.x >= 0 )
-					{
-						if (diff.x < -diff.y)
-							layer = 0;
-						else
-							layer = 1;
-					}
-					else
-					{
-						if (diff.z < -diff.w)
-							layer = 2;
-						else
-							layer = 3;
-					}
-				}
+
+				float3 v = start + dir * insideDist;
+				float4 z=abs(v.z-getHeight(v));
+				//get layer intersected
+				int m=0; 
+				if (z.y<z.x) m=1;
+				if (z.z<z[m]) m=2; 
+				if (z.w< z[m]) m=3;
 		
-				float3 v = start + dir * ( currentDist );
-				return float4(v.xy,layer,currentDist/len);
+				v = start + dir * ( insideDist );
+				return float4(v.xy,m,insideDist/len);
 			}
 
 			float4 show_layer( int layer )
@@ -161,19 +153,25 @@
 
 				int layer = h.z;
 
- 				float4 Nx = tex2D(_NormalX,h.xy);
+ 				float4 Nz = tex2D(_NormalX,h.xy);
 				float4 Ny = tex2D(_NormalY,h.xy);
-				float NNx = (Nx[layer]-0.5)*2;
-				float NNy = (Ny[layer]-0.5)*2;		
-				float3 N = normalize(float3( NNx, NNy,sqrt(1-(NNx*NNx + NNy*NNy))));
-				if ( h.w > 0.9)
+				float3 N;
+				N.y = -(Nz[layer]-0.5)*2;
+				N.x = (Ny[layer]-0.5)*2;		
+				N.z = sqrt(max(0,1.0-dot(N.xy,N.xy)));
+				if (layer == 0 || layer == 2)
+					N.z *= -1;
+				if ( h.w > 0.97)
 					discard;
 				
-				float3 light = normalize(float3(1,1,0));
+				float3 light = normalize(float3(1,0,0));
+				//light = mul(float4(light,1),_World2Object);
+				N = mul(_Object2World,N);
+				//return float4(N,0);
 				float b = dot(N,light);
-				//return show_layer(layer);
+				return b* tex2D(_Diffuse, h.xy);
 				return float4(b,b,b,0);
-				//return float4(frac(float2(h.x,h.y)),0,0);
+
 				
 				
 			}
