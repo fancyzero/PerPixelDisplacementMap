@@ -18,6 +18,17 @@ public class TrueImpostorsWindow : EditorWindow
 			p3 = pp3;
 		}
 	};
+	public class Edge 
+	{
+		public Vector3 v1;
+		public Vector3 v2;
+		public Edge( Vector3 pv1, Vector3 pv2)
+		{
+			v1 = pv1;
+			v2 = pv2;
+		}
+	};
+
 	public Mesh selected_mesh = null;
 	public List<Vector3> vertices = new List<Vector3>();
 	public List<Facet> 	faces = new List<Facet>();
@@ -45,46 +56,6 @@ public class TrueImpostorsWindow : EditorWindow
 			Generate(selected_mesh);
 		}
 	
-	}
-
-	struct RayCastResult
-	{
-		public float t;
-		public Vector2 uv;
-		public RayCastResult(float _t, Vector2 _uv)
-		{
-			t = _t;
-			uv = _uv;
-		}
-	};
-
-	RayCastResult RayQuery(Vector3[] vertices, Vector3 ray_start, Vector3 ray_dir )
-	{
-		Vector3 p1 = vertices [0];
-		Vector3 p2 = vertices [1];
-		Vector3 p3 = vertices [2];
-		
-		Vector3 e1 = p2 - p1;
-		Vector3 e2 = p3 - p1;
-				
-		Vector3 s1 = Vector3.Cross (ray_dir, e2);
-		float divisor = Vector3.Dot (s1, e1);
-		if (divisor == 0.0f)
-			return new RayCastResult(-1, new Vector2(0,0));
-		float inv_divisor = 1.0f / divisor;
-						
-		Vector3 d = ray_start - p1;
-		float u = Vector3.Dot(d, s1) * inv_divisor;
-			
-		if (u < 0 || u > 1)
-			return new RayCastResult(-1, new Vector2(0,0));
-
-		Vector3 s2 = Vector3.Cross(d, e1);
-		float v = Vector3.Dot (ray_dir, s2) * inv_divisor;
-		if (v < 0 || u + v > 1.0f)
-			return new RayCastResult(-1, new Vector2(0,0));
-		float t = Vector3.Dot(e2, s2) * inv_divisor;
-		return new RayCastResult(t, new Vector2(u,v));
 	}
 
 	struct QueryResult
@@ -126,11 +97,11 @@ public class TrueImpostorsWindow : EditorWindow
 		return new Vector3[]{min,max};
 	}
 
-	Vector3[] GetTriangleVertsByIndex( int index)
+	List<Vector3> GetTriangleVertsByIndex( int index)
 	{	
 		if (index > faces.Count)
 			return null;
-		return new Vector3[]{vertices[faces[index].p1],vertices[faces[index].p2],vertices[faces[index].p3]};
+		return new List<Vector3>{vertices[faces[index].p1],vertices[faces[index].p2],vertices[faces[index].p3]};
 
 	}
 
@@ -151,101 +122,101 @@ public class TrueImpostorsWindow : EditorWindow
 	
 			mesh.uv [faces [triangleIndex].p3]};
 	}
+	
 
-	List<int>[,] GroupTriangles( int group_row, int group_col, float group_width, float group_height, Vector3 max_point)
+	void RasterizeTriangle( List<float>[,] buffer, List<Vector3> vertices, float pixel_size )
 	{
-		// put triangles into groups by its aabb to speed up ray casting
-		List<int>[,] triangle_groups = new List<int>[group_col, group_row];
+		Edge[] edges = new Edge[3];
 
-		for( int i=0; i < faces.Count; i++ )
+		vertices.Sort (delegate (Vector3 a, Vector3 b) {
+			if ( a.y < b.y )
+				return -1;
+			if ( a.y > b.y )
+				return 1;
+			if ( a.z < b.z )
+				return -1;
+			if ( a.z > b.z )
+				return 1;
+			return 0;
+			
+		});
+
+		edges[0] = new Edge (vertices [0], vertices [1]);
+		edges[1] = new Edge (vertices [1], vertices [2]);
+		edges[2] = new Edge (vertices [2], vertices [0]);
+
+		Edge top_edge = null;
+		Edge[] left_edges = new Edge[2];
+
+		if (edges [0].v1.y == edges [0].v2.y)
 		{
-			Vector3 p1 = vertices[faces[i].p1];
-			Vector3 p2 = vertices[faces[i].p2];
-			Vector3 p3 = vertices[faces[i].p3];
-			//get aabb
-			Vector3[] aabb = GetAABB(new Vector3[]{p1,p2,p3});
-			if ( aabb == null )
-				continue;
-			float extend = 2.0f;
-			Vector3 p_min=aabb[0]-new Vector3(extend,extend,extend);
-			Vector3 p_max=aabb[1]+new Vector3(extend,extend,extend);
-			int startx = (int)(p_min.y / group_width);
-			int starty = (int)(p_min.z / group_height);
-			int endx = (int)(p_max.y / group_width);
-			int endy = (int)(p_max.z / group_height);
-			//fill groups
-			for (int x = startx; x <= endx; x++ )
-				for (int y = starty; y <= endy; y++ )
-				{
-				if ( x > triangle_groups.GetUpperBound(0) || y > triangle_groups.GetUpperBound(1) ||
-				    x < triangle_groups.GetLowerBound(0) || y < triangle_groups.GetLowerBound(1))
-						continue;
-					if (triangle_groups[x,y] == null )
-						triangle_groups[x,y] = new List<int>();
-						triangle_groups[x,y].Add(i);
-				}
-
-
+			top_edge = edges [0];
+			left_edges[0] = edges[2];
+		/*	
+		 *     ------
+		 *     \    /
+		 *      \  /
+		 *       v
+		 *
+		 */
 		}
-		return triangle_groups;
-	}
-
-	List<QueryResult> PixelQuery( List<Vector3> vertices, Vector3 ray_start, Vector3 ray_dir, List<int>[,] triangle_groups, float group_width, float group_height, float hscale)
-	{
-		List<QueryResult> results = new List<QueryResult>();
-
-		int x = (int)(ray_start.y / group_width);
-		int y = (int)(ray_start.z / group_height);
-		List<int> valid_triangles = triangle_groups[x,y];
-		if (valid_triangles == null  || valid_triangles.Count == 0)
-			return results;
-		foreach (int i in valid_triangles) 
+		if (top_edge == null) 
 		{
-
-			Vector3[] triangle_vertices = GetTriangleVertsByIndex(i);
-			RayCastResult result = RayQuery(triangle_vertices, ray_start, ray_dir);
-			if ( result.t >= 0 )
+			if (vertices[1].y == vertices[2].y )
 			{
-				if ( log)
-					Debug.LogFormat("{0},{1},{2}", triangle_vertices[0].ToString("F4"),triangle_vertices[1].ToString("F4"),triangle_vertices[2].ToString("F4"));
-				QueryResult qr = new QueryResult();
-				qr.t = result.t;
-				qr.uv = result.uv;
-				qr.triangleIndex = i;
-				results.Add(qr);
+				left_edges[0] = edges[0];
+			}
+			else
+			//find one or two left edge
+			if ( vertices[1].z < vertices[0].z && vertices[1].z < vertices[2].z )
+			{
+				left_edges[0] = edges[0];
+				left_edges[1] = edges[1];
+			}
+			else
+			{
+				left_edges[0] = edges[2];
 			}
 
 		}
-		if (results.Count == 0)
-			return results;
-		results.Sort (delegate (QueryResult a, QueryResult b) {
-			if ( a.t < b.t )
-				return -1;
-			if ( a.t > b.t )
-				return 1;
-			return 0;
-
-		});
-
-		int j = 0;
-
-		while( j < results.Count-1 )
+		//fill flat bottom triangle
+		if (left_edges [0] != null) 
 		{
-			if ( Math.Abs(results[j].t - results[j+1].t) < 0.00001f )
-				results.RemoveAt(j);
-			else
-				j++;
-		}
-		if (results.Count == 1)
-			results.Clear ();
-		if (results.Count % 2 == 1) 
-		{
-			errors+="warning , bad result\n";
-			results.Add(results[results.Count-1]);
-		}
+			Edge e = left_edges[0];
+			Vector3 v1;
+			Vector3 v2;
+			if ( e.v1.y < e.v2.y )
+				v1 
+
+			Vector3 delta = v2-v1;
+			float deltax = delta.z;
+			float deltay = delta.y;
+			int h = (int)(deltay/pixel_size);
+			float k = deltax/deltay;
+			int startx = (int)v1.z;
+			int starty = (int)v1.y;
+
+			for (int y = starty; y <= starty + h; y++ )
+			{
+				int x = 0;
+				//find nearest bottom line of pixel grid
+				float nexth = v1.y 
+				float xstride = 
+				if ( pixel_inside_triangle(x,y,pixel_size, vertices))
+				{
+					if ( buffer == null )
+						buffer = new List<float>();
+					buffer[x,y].Add(0.1f);
+				}
+			}
 
 
-		return results;
+		}
+
+	}
+	bool pixel_inside_triangle( int x, int y, float pixel_size, List<Vector3> vertices )
+	{
+						return true;
 	}
 
 	void SaveTextureToFile( Texture2D texture, string filename)
@@ -260,8 +231,7 @@ public class TrueImpostorsWindow : EditorWindow
 
 	void Generate( Mesh mesh)
 	{
-		int width = 256;
-		int height = 256;
+		int map_size = 256;
 
 		faces.Clear ();
 
@@ -276,54 +246,42 @@ public class TrueImpostorsWindow : EditorWindow
 		vertices.AddRange(mesh.vertices);
 
 		Vector3[] aabb = GetAABB (vertices.ToArray());
+		Vector3 max_point = aabb [1] - aabb [0];
+		float aspect_scale = max_point.y / max_point.z;
+		float inv_aspect_scale = 1.0f / aspect_scale;
+
 		for ( int i = 0 ; i < vertices.Count; i++) 
 		{
 			vertices[i] -= aabb[0];
+			if (max_point.z > max_point.y)
+				vertices[i].Set (vertices[i].x, vertices[i].y, vertices[i].z * aspect_scale ) ;
+			else
+				vertices[i].Set (vertices[i].x, vertices[i].y* inv_aspect_scale, vertices[i].z  ) ;
 		}
-		Vector3 max_point = aabb [1] - aabb [0];
-		float wstep = (max_point.y) / width;
-		float hstep = (max_point.z) / height;
-		float hscale = 1 / (max_point.x);
-		List<int>[,] tg = GroupTriangles(width, height, wstep, hstep, max_point);
 
-		var displacement_tex = new Texture2D (width, height);
+		float pixel_size = (max_point.y) / map_size;
+
+		float hscale = 1.0f / (max_point.x);
+
+		var displacement_tex = new Texture2D (map_size, map_size);
 		var disp_pixels = displacement_tex.GetPixels32 ();
-
-		for (int y = 0; y < height; y++) {
-			for (int x =0; x < width; x++) {
-				log = false;
-				if ( x==128 && y ==129 )
-					log = true;
-				Vector3 start = new Vector3(0, x*wstep, y*hstep);
-				Vector3 dir = new Vector3(1,0,0);
-				var query_results = PixelQuery(vertices, start, dir, tg, wstep, hstep, hscale ); 
-				byte[] color = new byte[4]{255,255,255,255};
-				byte[] normal_x = new byte[4];
-				byte[] normal_y = new byte[4];
-
-				for ( int c = 0; c < query_results.Count; c++ )
-				{
-					if ( c >= 4)
-						break;
-					var r = query_results[c];
-					float u=r.uv.x;
-					float v=r.uv.y;
-					float w = 1-(u+v);
-					var normals = GetTriangleNormals(mesh, r.triangleIndex);
-					normal_x[c] = (byte)(((w * normals[0].z + u * normals[1].z + v * normals[2].z)+1)/2*255);
-					normal_y[c] = (byte)(((w * normals[0].y + u * normals[1].y + v * normals[2].y)+1)/2*255);
-					color[c]=(byte)(query_results[c].t * hscale * 255);
-				}
-				disp_pixels[x + y*width].r = color[0];
-				disp_pixels[x + y*width].g = color[1];
-				disp_pixels[x + y*width].b = color[2];
-				disp_pixels[x + y*width].a = color[3];
-			}
+		List<float>[,] buffer = new List<float>[map_size,map_size];
+		for ( int i = 0; i < faces.Count; i++ )
+		{
+			RasterizeTriangle( buffer, GetTriangleVertsByIndex(i), pixel_size);
+		}
+		for ( int x = 0; x < map_size; x++ )
+			for ( int y = 0; y < map_size; y++ )
+		{
+			if ( buffer[x,y] != null && buffer[x,y].Count > 0 )
+				disp_pixels[x+y*map_size] = new Color32(255,255,255,255);
+			else
+				disp_pixels[x+y*map_size] = new Color32(0,255,0,255);
 		}
 		displacement_tex.SetPixels32 (disp_pixels);
 		SaveTextureToFile (displacement_tex, "fff.png");
 
-	
+		Debug.Log("Done");
 
 	 }
 }
