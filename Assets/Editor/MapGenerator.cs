@@ -27,6 +27,20 @@ public class TrueImpostorsWindow : EditorWindow
 			v1 = pv1;
 			v2 = pv2;
 		}
+        public Vector3 Vector()
+        {
+            Vector3 ret = (v2 - v1);
+            ret.Normalize();
+            return ret;
+        }
+        public float Slope()
+        {
+            return (v2 - v1).z / (v2 - v1).y;
+        }
+        public float Height()
+        {
+            return Mathf.Abs((v2 - v1).y);
+        }
 	};
 
 	public Mesh selected_mesh = null;
@@ -123,100 +137,106 @@ public class TrueImpostorsWindow : EditorWindow
 			mesh.uv [faces [triangleIndex].p3]};
 	}
 	
+    bool InTriangle(float x, float y, List<Vector3> vertices )
+    {
+        return false;
+    }
+
 
 	void RasterizeTriangle( List<float>[,] buffer, List<Vector3> vertices, float pixel_size )
 	{
+        //todo: skip degenerated triangles
 		Edge[] edges = new Edge[3];
+        //find bottom most then left most vertex
+        int start = 0;
+        for (int i = 0; i < vertices.Count; i++)
+        {
+            if (vertices[start].z > vertices[i].z)
+                start = i;
+            else if (vertices[start].z == vertices[i].z && vertices[start].y < vertices[i].y)
+            {
+                start = i;
+            }
+        }
 
-		vertices.Sort (delegate (Vector3 a, Vector3 b) {
-			if ( a.y < b.y )
-				return -1;
-			if ( a.y > b.y )
-				return 1;
-			if ( a.z < b.z )
-				return -1;
-			if ( a.z > b.z )
-				return 1;
-			return 0;
-			
-		});
+        int p0 = start;
+        int p1 = (start + 1) % 3;
+        int p2 = (start + 2) % 3;
 
-		edges[0] = new Edge (vertices [0], vertices [1]);
-		edges[1] = new Edge (vertices [1], vertices [2]);
-		edges[2] = new Edge (vertices [2], vertices [0]);
+        edges[0] = new Edge (vertices [p0], vertices [p1]);
+		edges[1] = new Edge (vertices [p1], vertices [p2]);
+		edges[2] = new Edge (vertices [p2], vertices [p0]);
 
-		Edge top_edge = null;
+        //swap if CCW
+        if (Vector3.Cross(edges[0].Vector(), edges[2].Vector()).x < 0)
+        {
+            edges[0] = new Edge(vertices[p0], vertices[p2]);
+            edges[1] = new Edge(vertices[p2], vertices[p1]);
+            edges[2] = new Edge(vertices[p1], vertices[p0]);
+        }
+
+        Edge bottom_edge = null;
 		Edge[] left_edges = new Edge[2];
 
-		if (edges [0].v1.y == edges [0].v2.y)
+        //find a triangle that bottom edge is horizontal
+        if (edges[2].v1.y == edges[2].v2.y)
+        {
+            bottom_edge = edges[2];
+            left_edges[0] = edges[0];
+        }
+
+        //if not a bottom horiz triangle, find one or two left edges
+        if (bottom_edge == null) 
 		{
-			top_edge = edges [0];
-			left_edges[0] = edges[2];
-		/*	
-		 *     ------
-		 *     \    /
-		 *      \  /
-		 *       v
-		 *
-		 */
-		}
-		if (top_edge == null) 
-		{
-			if (vertices[1].y == vertices[2].y )
+			if (vertices[1].z >= vertices[2].z  )
 			{
 				left_edges[0] = edges[0];
 			}
 			else
-			//find one or two left edge
-			if ( vertices[1].z < vertices[0].z && vertices[1].z < vertices[2].z )
-			{
-				left_edges[0] = edges[0];
-				left_edges[1] = edges[1];
-			}
-			else
-			{
-				left_edges[0] = edges[2];
-			}
+            {
+                left_edges[0] = edges[0];
+                left_edges[0] = edges[1];
+            }
+        }
 
-		}
-		//fill flat bottom triangle
-		if (left_edges [0] != null) 
-		{
-			Edge e = left_edges[0];
-			Vector3 v1;
-			Vector3 v2;
-			if ( e.v1.y < e.v2.y )
-				v1 
+        //start fill scanline from edge0 to edge2 then edge1
+        //until start and end of the scanline mets
+        int start_edge = 0;
+        int end_edge = 2;
+        while(start_edge != end_edge)
+        {
+            float sk = edges[start_edge].Slope();
+            float sh = edges[start_edge].Height();
+            float sx = edges[start_edge].v1.z;
+            float sy = edges[start_edge].v1.y;
 
-			Vector3 delta = v2-v1;
-			float deltax = delta.z;
-			float deltay = delta.y;
-			int h = (int)(deltay/pixel_size);
-			float k = deltax/deltay;
-			int startx = (int)v1.z;
-			int starty = (int)v1.y;
+            float ek = edges[end_edge].Slope();
+            float eh = edges[end_edge].Height();
+            float ex = edges[end_edge].v1.z;
+            float ey = edges[end_edge].v1.y;
 
-			for (int y = starty; y <= starty + h; y++ )
-			{
-				int x = 0;
-				//find nearest bottom line of pixel grid
-				float nexth = v1.y 
-				float xstride = 
-				if ( pixel_inside_triangle(x,y,pixel_size, vertices))
-				{
-					if ( buffer == null )
-						buffer = new List<float>();
-					buffer[x,y].Add(0.1f);
-				}
-			}
+            Vector2 pus = new Vector2(sx / pixel_size, sy / pixel_size);
+            Vector2 pue = new Vector2(ex / pixel_size, ey / pixel_size);
 
+            while (sh > 0 && eh > 0)
+            {
+                //fill scan line
+                while (pus.x < pue.x)
+                {
+                    //fill pixel
+                }
+                //move to next line
+                pus.x += sk * pixel_size;
+                pus.y += pixel_size;
+                pue.x += ek * pixel_size;
+                pue.y += pixel_size;
 
-		}
-
+            }
+        }
 	}
 	bool pixel_inside_triangle( int x, int y, float pixel_size, List<Vector3> vertices )
 	{
-						return true;
+		return true;
 	}
 
 	void SaveTextureToFile( Texture2D texture, string filename)
