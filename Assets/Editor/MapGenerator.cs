@@ -41,6 +41,15 @@ public class TrueImpostorsWindow : EditorWindow
         {
             return Mathf.Abs((v2 - v1).y);
         }
+		public void AdjustBottomTop()
+		{
+			if (v1.y < v2.y )
+			{
+				Vector3 tmp = v1;
+				v1 = v2;
+				v2 = tmp;
+			}
+		}
 	};
 
 	public Mesh selected_mesh = null;
@@ -142,6 +151,15 @@ public class TrueImpostorsWindow : EditorWindow
         return false;
     }
 
+	float GetNextClosestHeight(float h, float pixel_size)
+	{
+		return  h % pixel_size + pixel_size;
+	}
+
+	Vector2 GetPixelCoord(Vector2 pos,float pixel_size)
+	{
+		return new Vector2(pos.x / pixel_size, pos.y / pixel_size);
+	}
 
 	void RasterizeTriangle( List<float>[,] buffer, List<Vector3> vertices, float pixel_size )
 	{
@@ -162,6 +180,10 @@ public class TrueImpostorsWindow : EditorWindow
         int p0 = start;
         int p1 = (start + 1) % 3;
         int p2 = (start + 2) % 3;
+
+		float max_y = Mathf.Max (vertices [p0].y, vertices [p1].y, vertices [p2].y);
+		float min_y = Mathf.Min (vertices [p0].y, vertices [p1].y, vertices [p2].y);
+
 
         edges[0] = new Edge (vertices [p0], vertices [p1]);
 		edges[1] = new Edge (vertices [p1], vertices [p2]);
@@ -198,40 +220,31 @@ public class TrueImpostorsWindow : EditorWindow
                 left_edges[0] = edges[1];
             }
         }
-
         //start fill scanline from edge0 to edge2 then edge1
-        //until start and end of the scanline mets
-        int start_edge = 0;
-        int end_edge = 2;
-        while(start_edge != end_edge)
+        //until start and end of the scanline meets
+        int left_edge_index = 0;
+        int right_edge_index = 2;
+		float bottom_h = edges[left_edge_index].v1.y;
+		float h = min_y;
+		Edge el = edges[left_edge_index];
+		Edge er = edges[right_edge_index];
+		while(true)
         {
-            float sk = edges[start_edge].Slope();
-            float sh = edges[start_edge].Height();
-            float sx = edges[start_edge].v1.z;
-            float sy = edges[start_edge].v1.y;
 
-            float ek = edges[end_edge].Slope();
-            float eh = edges[end_edge].Height();
-            float ex = edges[end_edge].v1.z;
-            float ey = edges[end_edge].v1.y;
+			float nexth = GetNextClosestHeight(h, pixel_size);
+			if (nexth > el.v2.y)
+				left_edge_index++;
+			if (nexth > er.v2.y )
+				right_edge_index--;
+			float left_delta_h = h - el.v1.y;
+			float right_delta_h = h - rl.v1.y;
+			Vector2 start = GetPixelCoord(el.v1.z+left_delta_h*el.Slope(),el.v2.y+left_delta_h);
+			Vector2 end = GetPixelCoord(er.v1.z+right_delta_h*er.Slope(),er.v2.y+right_delta_h;
 
-            Vector2 pus = new Vector2(sx / pixel_size, sy / pixel_size);
-            Vector2 pue = new Vector2(ex / pixel_size, ey / pixel_size);
 
-            while (sh > 0 && eh > 0)
-            {
-                //fill scan line
-                while (pus.x < pue.x)
-                {
-                    //fill pixel
-                }
-                //move to next line
-                pus.x += sk * pixel_size;
-                pus.y += pixel_size;
-                pue.x += ek * pixel_size;
-                pue.y += pixel_size;
+			if ( h > max_y )
+				break;
 
-            }
         }
 	}
 	bool pixel_inside_triangle( int x, int y, float pixel_size, List<Vector3> vertices )
@@ -247,6 +260,10 @@ public class TrueImpostorsWindow : EditorWindow
 		var binary= new BinaryWriter(file);
 		binary.Write(bytes);
 		file.Close();
+	}
+
+	bool IsPixelInTriangle(int x, int y, List<Vector3> triangle)
+	{
 	}
 
 	void Generate( Mesh mesh)
