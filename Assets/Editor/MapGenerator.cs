@@ -27,16 +27,21 @@ class Rasterizer
 		}
 		public float Height()
 		{
-			return Mathf.Abs((v2 - v1).y);
+			return Top() - Bottom();
 		}
-		public void AdjustBottomTop()
+		public float Bottom()
 		{
-			if (v1.y < v2.y )
-			{
-				Vector3 tmp = v1;
-				v1 = v2;
-				v2 = tmp;
-			}
+			if (v1.y > v2.y)
+				return v2.y;
+			else
+				return v1.y;
+		}
+		public float Top()
+		{
+			if (v1.y < v2.y)
+				return v2.y;
+			else
+				return v1.y;
 		}
 	};
 
@@ -109,18 +114,48 @@ class Rasterizer
 		}
 	}
 
+	public int[] sweep( int edge_index, float starth, float endh)
+	{
+
+	}
+
+	public int[] sweep2( int edge_index, float starth, float endh)
+	{
+		float m = endh;
+		if (endh > edges [edge_index]) 
+		{
+			m = edges[edge_index].Top();
+		}
+		float width = edges [edge_index].Slope () * m - starth;
+	}
 
 	public void Rasterize()
 	{
 		start_edge = 0;
 		end_edge = 2;
-		float start_y;
+		float start_h=edges[start_edge].Bottom();
+		while (true) 
+		{
+			float next_h = GetNextScanLine ();
+			float delta_h = next_h - start_h;
+			float middle_h = next_h;
+			if ( next_h > edges[start_edge].Top() )
+			{
+				middle_h = edges[start_edge].Top();
+			}
+			if ( next_h > edges[end_edge].Top() )
+			{
+				middle_h = edges[end_edge].Top();
+			}
 
-		//draw start edge for current scanline
-		//draw end edge for current scanline
-		//fill scanline between edge
-		//next scanline
+			float left = edges[start_edge].Slope() * delta_h;
+			float right = edges[end_edge].Slope() * delta_h;
+			//rasterize start edge for current scanline
 
+			//rasterize end edge for current scanline
+			//fill scanline between edge
+			//next scanline
+		}
 
 	}
 
@@ -131,8 +166,9 @@ class Rasterizer
 		return 1;
 	}
 
-	float NextScanLine()
+	float GetNextScanLine()
 	{
+		return scanline % pixel_size + pixel_size;
 	}
 
 	int bottom_edge;
